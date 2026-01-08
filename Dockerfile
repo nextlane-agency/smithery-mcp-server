@@ -1,29 +1,38 @@
-FROM node:18-alpine
+# --- Build Stage ---
+FROM node:18-alpine AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install basic dependencies
-RUN apk add --no-cache python3 bash
-
-# Copy package files first for better caching
+# Kopieer package files
 COPY package*.json ./
 
-# Install dependencies
+# Installeer dependencies (inclusief devDeps voor tsc)
 RUN npm install
 
-# Copy the rest of the application
+# Kopieer de rest van de code
 COPY . .
 
-# Build the TypeScript project
+# Bouw het project
 RUN npm run build
 
-# Make CLI script executable
-RUN chmod +x bin/cli.js
+# --- Runtime Stage ---
+FROM node:18-alpine
 
-# Create workspace directory with proper permissions
+WORKDIR /app
+
+# Kopieer alleen wat nodig is van de builder
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+
+# Optioneel: Kopieer de bin map als je die hebt voor de CLI
+COPY --from=builder /app/bin ./bin 2>/dev/null || :
+
+# Omgevingsvariabelen voor MCP
 RUN mkdir -p /tmp/mcp-workspace && chmod 777 /tmp/mcp-workspace
 ENV DEFAULT_WORKSPACE=/tmp/mcp-workspace
 
-# Command to run the server in stdio mode for Smithery
-CMD ["node", "dist/smithery-adapter.js"]
+# Start de server. 
+# LET OP: Controleer of dit bestand bestaat na 'npm run build'
+# Meestal is het 'dist/index.js' of 'dist/smithery-adapter.js'
+CMD ["node", "dist/index.js"]
