@@ -1,38 +1,33 @@
-# --- Build Stage ---
-FROM node:18-alpine AS builder
-
-WORKDIR /app
-
-# Kopieer package files
-COPY package*.json ./
-
-# Installeer dependencies (inclusief devDeps voor tsc)
-RUN npm install
-
-# Kopieer de rest van de code
-COPY . .
-
-# Bouw het project
-RUN npm run build
-
-# --- Runtime Stage ---
+# Gebruik de Node 18 Alpine image
 FROM node:18-alpine
 
+# Installeer systeem tools (nodig voor bash scripts en build tools)
+RUN apk add --no-cache python3 bash make g++
+
+# Zet de working directory
 WORKDIR /app
 
-# Kopieer alleen wat nodig is van de builder
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+# Kopieer package files eerst voor betere caching
+COPY package*.json ./
 
-# Optioneel: Kopieer de bin map als je die hebt voor de CLI
-COPY --from=builder /app/bin ./bin 2>/dev/null || :
+# Installeer ALLE dependencies (nodig omdat tsc in dependencies staat)
+RUN npm install
 
-# Omgevingsvariabelen voor MCP
+# Kopieer de rest van de applicatie
+COPY . .
+
+# Bouw het project met het script uit je package.json
+RUN npm run build
+
+# Zorg dat de CLI en de adapter uitvoerbaar zijn
+RUN chmod +x bin/cli.js 2>/dev/null || :
+RUN chmod +x dist/*.js 2>/dev/null || :
+
+# Create workspace directory (standaard voor MCP servers)
 RUN mkdir -p /tmp/mcp-workspace && chmod 777 /tmp/mcp-workspace
 ENV DEFAULT_WORKSPACE=/tmp/mcp-workspace
 
-# Start de server. 
-# LET OP: Controleer of dit bestand bestaat na 'npm run build'
-# Meestal is het 'dist/index.js' of 'dist/smithery-adapter.js'
-CMD ["node", "dist/index.js"]
+# BELANGRIJK: Smithery verwacht dat de server start.
+# Volgens jouw package.json is de start-file voor Smithery: dist/smithery-adapter.js
+# Als dit bestand NIET bestaat na de build, verander dit dan naar dist/main.js
+CMD ["node", "dist/smithery-adapter.js"]
